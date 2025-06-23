@@ -2,10 +2,10 @@
 
 [Build Status]: https://img.shields.io/github/actions/workflow/status/LeadRDRK/RustyAssetBundleEXtractor/ci.yml?branch=main
 [actions]: https://github.com/LeadRDRK/RustyAssetBundleEXtractor/actions?query=branch%3Amain
-[Latest Version]: https://img.shields.io/crates/v/RustyAssetBundleEXtractor.svg
-[crates.io]: https://crates.io/crates/rabex
-[Docs]: https://docs.rs/rabex/badge.svg
-[docs.rs]: https://docs.rs/crate/rabex/
+[Latest Version]: https://img.shields.io/crates/v/lead_rabex
+[crates.io]: https://crates.io/crates/lead_rabex
+[Docs]: https://docs.rs/lead_rabex/badge.svg
+[docs.rs]: https://docs.rs/crate/lead_rabex/
 [License_MIT]: https://img.shields.io/badge/License-MIT-yellow.svg
 [license_mit]: https://raw.githubusercontent.com/LeadRDRK/RustyAssetBundleEXtractor/main/LICENSE-MIT
 [License_APACHE]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
@@ -53,8 +53,8 @@ use std::{
     path::Path,
 };
 
-use rabex::files::{BundleFile, SerializedFile};
-use rabex::config::ExtractionConfig;
+use lead_rabex::files::{BundleFile, SerializedFile};
+use lead_rabex::config::ExtractionConfig;
 
 let mut reader = File::open(fp).unwrap();
 let export_dir = Path::new("dump");
@@ -120,9 +120,9 @@ for directory in &bundle.m_DirectoryInfo {
 
                 // serialize as actual class
                 // note: a small part of the object classes isn't implemented yet
-                if object.m_ClassID == rabex::objects::map::AssetBundle {
+                if object.m_ClassID == lead_rabex::objects::map::AssetBundle {
                     let ab = handler
-                        .parse::<rabex::objects::classes::AssetBundle>()
+                        .parse::<lead_rabex::objects::classes::AssetBundle>()
                         .unwrap();
                     println!("{:?}", ab);
                 }
