@@ -1,4 +1,4 @@
-#![allow(warnings)]
+#![allow(non_upper_case_globals)]
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
 

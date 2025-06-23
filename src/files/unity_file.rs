@@ -1,5 +1,5 @@
-use crate::config::ExtractionConfig;
-use std::io::{Error, Read, Seek};
+use crate::{config::ExtractionConfig, Error};
+use std::io::{Read, Seek};
 
 pub trait UnityFile {
     fn from_reader<T: Read + Seek>(

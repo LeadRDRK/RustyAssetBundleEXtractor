@@ -1,6 +1,6 @@
-use crate::{config::ExtractionConfig, files::unityfile::UnityFile, read_ext::ReadUrexExt};
+use crate::{config::ExtractionConfig, files::unity_file::UnityFile, read_ext::ReadUrexExt, Error};
 use byteorder::{BigEndian, ReadBytesExt};
-use std::io::{Error, Read, Seek};
+use std::io::{Read, Seek};
 enum WebCompressionType {
     None,
     GZip,

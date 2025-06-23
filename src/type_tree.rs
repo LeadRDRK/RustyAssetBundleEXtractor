@@ -1,11 +1,9 @@
 #![allow(clippy::redundant_closure_call)]
-use crate::commonstring::COMMONSTRING;
-use crate::read_ext::ReadSeekUrexExt;
+use crate::common_strings::COMMON_STRINGS;
 use crate::read_ext::ReadUrexExt;
+use crate::Error;
 use bitflags::bitflags;
 use byteorder::{ByteOrder, ReadBytesExt};
-use rmp;
-use std::io::{Read, Seek, Write};
 
 bitflags! {
     struct TransferMetaFlags: i32 {
@@ -60,58 +58,61 @@ bitflags! {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! generate_read_as {
     ($format: expr, $result: ty, $conv_i8: expr, $conv_u8: expr, $conv_i16: expr, $conv_u16: expr, $conv_i32: expr, $conv_u32: expr, $conv_i64: expr, $conv_u64: expr, $conv_f32: expr, $conv_f64: expr, $conv_bool: expr, $conv_str: expr, $conv_bytes: expr, $conv_map: expr, $conv_array: expr, $conv_cls: expr) => {
         paste::item! {
         #[doc = "Parses the data as of the object into the " $format "."]
-        pub fn [< read_as_ $format >]<R: Read + Seek, B: ByteOrder> (&self, reader: &mut R,) -> Result<$result, std::io::Error>{
-            // pub fn read_as_json2<R: Read + Seek, B: ByteOrder>(
+        pub fn [< read_as_ $format >]<R: std::io::Read + std::io::Seek, B: ByteOrder> (&self, reader: &mut R,) -> Result<$result, Error> {
+            // pub fn read_as_json2<R: std::io::Read + std::io::Seek, B: ByteOrder>(
             //     &self,
             //     reader: &mut R,
-            // ) -> Result<serde_json::Value, std::io::Error> {
+            // ) -> Result<serde_json::Value, Error> {
+                use crate::read_ext::ReadSeekUrexExt;
+
                 let mut align = self.requires_align();
-                let value: $result = match self.m_Type.as_str() {
+                let value: Result<$result, Error> = match self.m_Type.as_str() {
                     "SInt8" => {
-                        $conv_i8(reader.read_i8().unwrap())
+                        $conv_i8(reader.read_i8()?)
                     }
                     "UInt8" => {
-                        $conv_u8(reader.read_u8().unwrap())
+                        $conv_u8(reader.read_u8()?)
                     }
                     "char" => {
-                        $conv_str((reader.read_u8().unwrap() as char).to_string())
+                        $conv_str((reader.read_u8()? as char).to_string())
                     }
                     "SInt16" | "short" => {
-                        $conv_i16(reader.read_i16::<B>().unwrap())
+                        $conv_i16(reader.read_i16::<B>()?)
                     }
                     "UInt16" | "unsigned short" => {
-                        $conv_u16(reader.read_u16::<B>().unwrap())
+                        $conv_u16(reader.read_u16::<B>()?)
                     }
                     "SInt32" | "int" => {
-                        $conv_i32(reader.read_i32::<B>().unwrap())
+                        $conv_i32(reader.read_i32::<B>()?)
                     }
                     "UInt32" | "unsigned int" | "Type*" => {
-                        $conv_u32(reader.read_u32::<B>().unwrap())
+                        $conv_u32(reader.read_u32::<B>()?)
                     }
                     "SInt64" | "long long" => {
-                        $conv_i64(reader.read_i64::<B>().unwrap())
+                        $conv_i64(reader.read_i64::<B>()?)
                     }
                     "UInt64" | "unsigned long long" | "FileSize" => {
-                        $conv_u64(reader.read_u64::<B>().unwrap())
+                        $conv_u64(reader.read_u64::<B>()?)
                     }
                     "float" => {
-                        $conv_f32(reader.read_f32::<B>().unwrap())
+                        $conv_f32(reader.read_f32::<B>()?)
                     }
                     "double" => {
-                        $conv_f64(reader.read_f64::<B>().unwrap())
+                        $conv_f64(reader.read_f64::<B>()?)
                     }
                     "bool" => {
-                        $conv_bool(reader.read_bool().unwrap())
+                        $conv_bool(reader.read_bool()?)
                     }
                     "string" => {
                         align |= &self.children[0].requires_align();
-                        $conv_str(reader.read_string::<B>().unwrap())
+                        $conv_str(reader.read_string::<B>()?)
                     }
-                    "TypelessData" => $conv_bytes(&reader.read_bytes::<B>().unwrap()),
+                    "TypelessData" => $conv_bytes(&reader.read_bytes::<B>()?),
                     "map" => {
                         // map m_Container
                         //  Array Array
@@ -120,7 +121,7 @@ macro_rules! generate_read_as {
                         //          TYPE first
                         //          TYPE second
                         //assert_eq!(self.children.len(), 1);
-                        let size = reader.read_array_len::<B>().unwrap();
+                        let size = reader.read_array_len::<B>()?;
                         //assert_eq!(self.children[0].children.len(), 2);
                         let pair = &self.children[0].children[1];
                         align |= pair.requires_align();
@@ -139,7 +140,7 @@ macro_rules! generate_read_as {
                             let array = &self.children[0];
                             align |= array.requires_align();
 
-                            let size = reader.read_array_len::<B>().unwrap();
+                            let size = reader.read_array_len::<B>()?;
                             let array_node = &array.children[1];
                             $conv_array(reader, size, array_node)
                         } else {
@@ -151,7 +152,7 @@ macro_rules! generate_read_as {
                 if align {
                     reader.align4()?;
                 }
-                Ok(value)
+                Ok(value?)
             }
         }
     };
@@ -184,51 +185,51 @@ impl TypeTreeNode {
     pub fn from_reader<R: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut R,
         version: u32,
-    ) -> Result<TypeTreeNode, std::io::Error> {
+    ) -> Result<TypeTreeNode, Error> {
         fn read_node_base<R: std::io::Read + std::io::Seek, B: ByteOrder>(
             reader: &mut R,
             version: u32,
             level: u8,
-        ) -> Result<TypeTreeNode, std::io::Error> {
+        ) -> Result<TypeTreeNode, Error> {
             let mut node = TypeTreeNode {
                 m_Level: level,
-                m_Type: reader.read_cstr().unwrap(),
-                m_Name: reader.read_cstr().unwrap(),
-                m_ByteSize: reader.read_i32::<B>().unwrap(),
+                m_Type: reader.read_cstr()?,
+                m_Name: reader.read_cstr()?,
+                m_ByteSize: reader.read_i32::<B>()?,
                 m_VariableCount: if version == 2 {
-                    Some(reader.read_i32::<B>().unwrap())
+                    Some(reader.read_i32::<B>()?)
                 } else {
                     None
                 },
                 m_Index: if version != 3 {
-                    Some(reader.read_i32::<B>().unwrap())
+                    Some(reader.read_i32::<B>()?)
                 } else {
                     None
                 },
                 // in version 4, m_TypeFlags are m_IsArray
-                m_TypeFlags: reader.read_i32::<B>().unwrap(),
-                m_Version: reader.read_i32::<B>().unwrap(),
+                m_TypeFlags: reader.read_i32::<B>()?,
+                m_Version: reader.read_i32::<B>()?,
                 m_MetaFlag: if version != 3 {
-                    Some(reader.read_i32::<B>().unwrap())
+                    Some(reader.read_i32::<B>()?)
                 } else {
                     None
                 },
                 m_RefTypeHash: None,
                 children: Vec::new(),
             };
-            let children_count = reader.read_i32::<B>().unwrap();
+            let children_count = reader.read_i32::<B>()?;
             node.children = (0..children_count)
-                .map(|_| read_node_base::<R, B>(reader, version, node.m_Level + 1).unwrap())
-                .collect();
+                .map(|_| read_node_base::<R, B>(reader, version, node.m_Level + 1))
+                .collect::<Result<Vec<TypeTreeNode>, Error>>()?;
             Ok(node)
         }
-        Ok(read_node_base::<R, B>(reader, version, 0).unwrap())
+        Ok(read_node_base::<R, B>(reader, version, 0)?)
     }
 
     pub fn blob_from_reader<R: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut R,
         version: u32,
-    ) -> Result<TypeTreeNode, std::io::Error> {
+    ) -> Result<TypeTreeNode, Error> {
         // originally a list with level slicing
         // reordered here to fit the newer tree structure
         let node_size = if version >= 19 { 32 } else { 24 };
@@ -244,18 +245,17 @@ impl TypeTreeNode {
         fn read_string<R: std::io::Read + std::io::Seek, B: ByteOrder>(
             string_buffer_reader: &mut R,
             value: u32,
-        ) -> Result<String, std::io::Error> {
+        ) -> Result<String, Error> {
             // TODO - cache strings
             let isOffset = (value & 0x80000000) == 0;
             if isOffset {
                 string_buffer_reader
-                    .seek(std::io::SeekFrom::Start(value as u64))
-                    .unwrap();
+                    .seek(std::io::SeekFrom::Start(value as u64))?;
                 return string_buffer_reader.read_cstr();
             }
             let offset = value & 0x7FFFFFFF;
 
-            let ret = COMMONSTRING.get(&offset);
+            let ret = COMMON_STRINGS.get(&offset);
 
             if let Some(ret) = ret {
                 Ok(ret.to_string())
@@ -264,33 +264,33 @@ impl TypeTreeNode {
             }
         }
 
-        let nodes: Vec<TypeTreeNode> = (0..node_count)
-            .map(|_| TypeTreeNode {
-                m_Version: node_reader.read_u16::<B>().unwrap() as i32,
-                m_Level: node_reader.read_u8().unwrap(),
-                m_TypeFlags: node_reader.read_u8().unwrap() as i32,
+        let nodes = (0..node_count)
+            .map(|_| Ok(TypeTreeNode {
+                m_Version: node_reader.read_u16::<B>()? as i32,
+                m_Level: node_reader.read_u8()?,
+                m_TypeFlags: node_reader.read_u8()? as i32,
                 m_Type: read_string::<std::io::Cursor<Vec<u8>>, B>(
                     &mut string_buffer_reader,
-                    node_reader.read_u32::<B>().unwrap(),
+                    node_reader.read_u32::<B>()?,
                 )
-                .unwrap(),
+                ?,
                 m_Name: read_string::<std::io::Cursor<Vec<u8>>, B>(
                     &mut string_buffer_reader,
-                    node_reader.read_u32::<B>().unwrap(),
+                    node_reader.read_u32::<B>()?,
                 )
-                .unwrap(),
-                m_ByteSize: node_reader.read_i32::<B>().unwrap(),
-                m_Index: Some(node_reader.read_i32::<B>().unwrap()),
-                m_MetaFlag: Some(node_reader.read_i32::<B>().unwrap()),
+                ?,
+                m_ByteSize: node_reader.read_i32::<B>()?,
+                m_Index: Some(node_reader.read_i32::<B>()?),
+                m_MetaFlag: Some(node_reader.read_i32::<B>()?),
                 m_RefTypeHash: if version >= 19 {
-                    Some(node_reader.read_u64::<B>().unwrap())
+                    Some(node_reader.read_u64::<B>()?)
                 } else {
                     None
                 },
                 children: Vec::new(),
                 m_VariableCount: None,
-            })
-            .collect();
+            }))
+            .collect::<Result<Vec<TypeTreeNode>, Error>>()?;
 
         fn add_children(parent: &mut TypeTreeNode, nodes: &[TypeTreeNode], offset: usize) -> i32 {
             let mut added: i32 = 0;
@@ -308,9 +308,12 @@ impl TypeTreeNode {
 
         let mut root_node = nodes[0].clone();
         let added = add_children(&mut root_node, &nodes, 0);
+
+        #[cfg(debug_assertions)]
         if added != node_count - 1 {
             println!("Warning: not all nodes were added to the tree");
         }
+
         Ok(root_node)
     }
 
@@ -318,168 +321,178 @@ impl TypeTreeNode {
         (self.m_MetaFlag.unwrap_or(0) & TransferMetaFlags::ALIGN_BYTES_FLAG.bits()) != 0
     }
 
+    #[cfg(feature = "json")]
     generate_read_as!(
         json,
         serde_json::Value,
-        |x: i8| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: u8| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: i16| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: u16| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: i32| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: u32| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: i64| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: u64| serde_json::Value::Number(serde_json::Number::from(x)),
-        |x: f32| serde_json::Value::Number(serde_json::Number::from_f64(x as f64).unwrap()),
-        |x: f64| serde_json::Value::Number(serde_json::Number::from_f64(x).unwrap()),
-        serde_json::Value::Bool,
-        serde_json::Value::String,
-        (|x: &[u8]| serde_json::Value::Array(
+        |x: i8| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: u8| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: i16| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: u16| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: i32| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: u32| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: i64| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: u64| Ok(serde_json::Value::Number(serde_json::Number::from(x))),
+        |x: f32| serde_json::Number::from_f64(x as f64)
+            .map(|v| serde_json::Value::Number(v))
+            .ok_or_else(|| Error::InvalidValue(format!("{x} is not allowed"))),
+        |x: f64| serde_json::Number::from_f64(x)
+            .map(|v| serde_json::Value::Number(v))
+            .ok_or_else(|| Error::InvalidValue(format!("{x} is not allowed"))),
+        |x: bool| Ok(serde_json::Value::Bool(x)),
+        |x: String| Ok(serde_json::Value::String(x)),
+        |x: &[u8]| Ok(serde_json::Value::Array(
             x.iter()
                 .map(|y| serde_json::Value::Number(serde_json::Number::from(*y)))
                 .collect()
         )),
         // map
-        (|reader: &mut R, size: usize, first: &TypeTreeNode, second: &TypeTreeNode| {
-            serde_json::Value::Array(
+        |reader: &mut R, size: usize, first: &TypeTreeNode, second: &TypeTreeNode| {
+            Ok(serde_json::Value::Array(
                 (0..size)
-                    .map(|_| {
+                    .map(|_| Ok(
                         serde_json::Value::Array(vec![
-                            first.read_as_json::<R, B>(reader).unwrap(),
-                            second.read_as_json::<R, B>(reader).unwrap(),
+                            first.read_as_json::<R, B>(reader)?,
+                            second.read_as_json::<R, B>(reader)?
                         ])
-                    })
-                    .collect(),
-            )
-        }),
+                    ))
+                    .collect::<Result<Vec<serde_json::Value>, Error>>()?
+            ))
+        },
         // array
-        (|reader: &mut R, size: usize, array_node: &TypeTreeNode| {
-            serde_json::Value::Array(
+        |reader: &mut R, size: usize, array_node: &TypeTreeNode| {
+            Ok(serde_json::Value::Array(
                 (0..size)
-                    .map(|_| array_node.read_as_json::<R, B>(reader).unwrap())
-                    .collect(),
-            )
-        }),
+                    .map(|_| array_node.read_as_json::<R, B>(reader))
+                    .collect::<Result<Vec<serde_json::Value>, Error>>()?,
+            ))
+        },
         // class
         |reader: &mut R, children: &[TypeTreeNode]| {
             let mut map = serde_json::Map::new();
             for child in children {
                 map.insert(
                     child.m_Name.clone(),
-                    child.read_as_json::<R, B>(reader).unwrap(),
+                    child.read_as_json::<R, B>(reader)?,
                 );
             }
-            serde_json::Value::from(map)
+            Ok(serde_json::Value::from(map))
         }
     );
 
+    #[cfg(feature = "yaml")]
     generate_read_as!(
         yaml,
-        Result<serde_yaml::Value, serde_yaml::Error>,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
-        serde_yaml::to_value,
+        serde_yaml::Value,
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
+        |x| Ok(serde_yaml::to_value(x)?),
         // map
-        (|reader: &mut R, size: usize, first: &TypeTreeNode, second: &TypeTreeNode| {
-            serde_yaml::to_value(
+        |reader: &mut R, size: usize, first: &TypeTreeNode, second: &TypeTreeNode| {
+            Ok(serde_yaml::to_value(
                 (0..size)
-                    .map(|_| {
+                    .map(|_| Ok(
                         serde_yaml::to_value(vec![
-                            first.read_as_yaml::<R, B>(reader).unwrap().unwrap(),
-                            second.read_as_yaml::<R, B>(reader).unwrap().unwrap(),
-                        ])
-                    })
-                    .collect::<Result<Vec<serde_yaml::Value>, _>>()?,
-            )
-        }),
+                            first.read_as_yaml::<R, B>(reader)?,
+                            second.read_as_yaml::<R, B>(reader)?,
+                        ])?
+                    ))
+                    .collect::<Result<Vec<serde_yaml::Value>, Error>>()?,
+            )?)
+        },
         // array
-        (|reader: &mut R, size: usize, array_node: &TypeTreeNode| {
-            serde_yaml::to_value(
+        |reader: &mut R, size: usize, array_node: &TypeTreeNode| {
+            Ok(serde_yaml::to_value(
                 (0..size)
-                    .map(|_| array_node.read_as_yaml::<R, B>(reader).unwrap())
-                    .collect::<Result<Vec<serde_yaml::Value>, _>>()?,
-            )
-        }),
+                    .map(|_| array_node.read_as_yaml::<R, B>(reader))
+                    .collect::<Result<Vec<serde_yaml::Value>, Error>>()?,
+            )?)
+        },
         // class
         |reader: &mut R, children: &[TypeTreeNode]| {
             let mut map = serde_yaml::Mapping::new();
             for child in children {
                 map.insert(
                     serde_yaml::Value::String(child.m_Name.clone()),
-                    child.read_as_yaml::<R, B>(reader).unwrap().unwrap()
+                    child.read_as_yaml::<R, B>(reader)?
                 );
             }
-            serde_yaml::to_value(map)
+            Ok(serde_yaml::to_value(map)?)
         }
     );
 
+    #[cfg(feature = "msgpack")]
     #[doc = "Parses the data as of the object into the msgpack."]
-    pub fn read_as_msgpack<R: Read + Seek, B: ByteOrder>(
+    pub fn read_as_msgpack<R: std::io::Read + std::io::Seek, B: ByteOrder>(
         &self,
         reader: &mut R,
-    ) -> Result<Vec<u8>, std::io::Error> {
+    ) -> Result<Vec<u8>, Error> {
         let mut buf = std::io::Cursor::new(Vec::new());
         self._read_as_msgpack::<R, B, std::io::Cursor<Vec<u8>>>(reader, &mut buf)?;
         Ok(buf.into_inner())
     }
 
-    pub fn _read_as_msgpack<R: Read + Seek, B: ByteOrder, W: Write>(
+    #[cfg(feature = "msgpack")]
+    pub fn _read_as_msgpack<R: std::io::Read + std::io::Seek, B: ByteOrder, W: std::io::Write> (
         &self,
         reader: &mut R,
         writer: &mut W,
-    ) -> Result<(), std::io::Error> {
-        // pub fn read_as_json2<R: Read + Seek, B: ByteOrder>(
+    ) -> Result<(), Error> {
+        use crate::read_ext::ReadSeekUrexExt;
+
+        // pub fn read_as_json2<R: std::io::Read + std::io::Seek, B: ByteOrder>(
         //     &self,
         //     reader: &mut R,
-        // ) -> Result<serde_json::Value, std::io::Error> {
+        // ) -> Result<serde_json::Value, Error> {
         let mut align = self.requires_align();
         match self.m_Type.as_str() {
-            "SInt8" => rmp::encode::write_i8::<W>(writer, reader.read_i8().unwrap()),
-            "UInt8" => rmp::encode::write_u8::<W>(writer, reader.read_u8().unwrap()),
+            "SInt8" => rmp::encode::write_i8::<W>(writer, reader.read_i8()?),
+            "UInt8" => rmp::encode::write_u8::<W>(writer, reader.read_u8()?),
             "char" => rmp::encode::write_str::<W>(
                 writer,
-                (reader.read_u8().unwrap() as char).to_string().as_str(),
+                (reader.read_u8()? as char).to_string().as_str(),
             ),
             "SInt16" | "short" => {
-                rmp::encode::write_i16::<W>(writer, reader.read_i16::<B>().unwrap())
+                rmp::encode::write_i16::<W>(writer, reader.read_i16::<B>()?)
             }
             "UInt16" | "unsigned short" => {
-                rmp::encode::write_u16::<W>(writer, reader.read_u16::<B>().unwrap())
+                rmp::encode::write_u16::<W>(writer, reader.read_u16::<B>()?)
             }
             "SInt32" | "int" => {
-                rmp::encode::write_i32::<W>(writer, reader.read_i32::<B>().unwrap())
+                rmp::encode::write_i32::<W>(writer, reader.read_i32::<B>()?)
             }
             "UInt32" | "unsigned int" | "Type*" => {
-                rmp::encode::write_u32::<W>(writer, reader.read_u32::<B>().unwrap())
+                rmp::encode::write_u32::<W>(writer, reader.read_u32::<B>()?)
             }
             "SInt64" | "long long" => {
-                rmp::encode::write_i64::<W>(writer, reader.read_i64::<B>().unwrap())
+                rmp::encode::write_i64::<W>(writer, reader.read_i64::<B>()?)
             }
             "UInt64" | "unsigned long long" | "FileSize" => {
-                rmp::encode::write_u64::<W>(writer, reader.read_u64::<B>().unwrap())
+                rmp::encode::write_u64::<W>(writer, reader.read_u64::<B>()?)
             }
-            "bool" => match rmp::encode::write_bool::<W>(writer, reader.read_bool().unwrap()){
+            "bool" => match rmp::encode::write_bool::<W>(writer, reader.read_bool()?){
                 Ok(_) => Ok(()),
                 Err(e) => {
                     Err(rmp::encode::ValueWriteError::InvalidDataWrite(e))
                 }
             },
-            "float" => rmp::encode::write_f32::<W>(writer, reader.read_f32::<B>().unwrap()),
-            "double" => rmp::encode::write_f64::<W>(writer, reader.read_f64::<B>().unwrap()),
+            "float" => rmp::encode::write_f32::<W>(writer, reader.read_f32::<B>()?),
+            "double" => rmp::encode::write_f64::<W>(writer, reader.read_f64::<B>()?),
             "string" => {
                 align |= &self.children[0].requires_align();
-                rmp::encode::write_str::<W>(writer, &reader.read_string::<B>().unwrap())
+                rmp::encode::write_str::<W>(writer, &reader.read_string::<B>()?)
             }
-            "TypelessData" => rmp::encode::write_bin(writer, &reader.read_bytes::<B>().unwrap()),
+            "TypelessData" => rmp::encode::write_bin(writer, &reader.read_bytes::<B>()?),
             "map" => {
                 // map m_Container
                 //  Array Array
@@ -488,7 +501,7 @@ impl TypeTreeNode {
                 //          TYPE first
                 //          TYPE second
                 //assert_eq!(self.children.len(), 1);
-                let size = reader.read_array_len::<B>().unwrap();
+                let size = reader.read_array_len::<B>()?;
                 //assert_eq!(self.children[0].children.len(), 2);
                 let pair = &self.children[0].children[1];
                 align |= pair.requires_align();
@@ -496,9 +509,9 @@ impl TypeTreeNode {
                 let first = &pair.children[0];
                 let second = &pair.children[1];
 
-                rmp::encode::write_array_len(writer, size as u32).unwrap();
+                rmp::encode::write_array_len(writer, size as u32)?;
                 for _ in 0..size {
-                    rmp::encode::write_array_len(writer, 2).unwrap();
+                    rmp::encode::write_array_len(writer, 2)?;
                     first._read_as_msgpack::<R,B,W>(reader, writer)?;
                     second._read_as_msgpack::<R,B,W>(reader, writer)?;
                 }
@@ -514,26 +527,25 @@ impl TypeTreeNode {
                     let array = &self.children[0];
                     align |= array.requires_align();
 
-                    let size = reader.read_array_len::<B>().unwrap();
+                    let size = reader.read_array_len::<B>()?;
                     let array_node = &array.children[1];
 
-                    rmp::encode::write_array_len(writer, size as u32).unwrap();
+                    rmp::encode::write_array_len(writer, size as u32)?;
                     for _ in 0..size {
                         array_node._read_as_msgpack::<R,B,W>(reader, writer)?;
                     }
                     Ok(())
                 } else {
                     // class
-                    rmp::encode::write_map_len(writer, self.children.len() as u32).unwrap();
+                    rmp::encode::write_map_len(writer, self.children.len() as u32)?;
                     for child in &self.children {
-                        rmp::encode::write_str(writer, &child.m_Name).unwrap();
+                        rmp::encode::write_str(writer, &child.m_Name)?;
                         child._read_as_msgpack::<R,B,W>(reader, writer)?;
                     }
                     Ok(())
                 }
             }
-        }
-        .unwrap();
+        }?;
         if align {
             reader.align4()?;
         }

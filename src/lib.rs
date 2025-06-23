@@ -2,12 +2,17 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 pub mod asset_manager;
-pub mod commonstring;
 pub mod config;
 pub mod files;
 pub mod read_ext;
-pub mod typetree;
+pub mod type_tree;
 pub mod objects;
 
 mod archive_storage_manager;
 // mod test;
+
+mod error;
+pub use error::Error;
+
+mod common_strings;
+pub use common_strings::COMMON_STRINGS;

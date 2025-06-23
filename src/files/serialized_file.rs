@@ -1,5 +1,6 @@
 use super::UnityFile;
-use crate::typetree::TypeTreeNode;
+use crate::type_tree::TypeTreeNode;
+use crate::Error;
 use crate::{
     config::ExtractionConfig,
     read_ext::{ReadSeekUrexExt, ReadUrexExt},
@@ -21,7 +22,7 @@ impl SerializedFileHeader {
     fn from_reader<T: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut T,
         config: &crate::config::ExtractionConfig,
-    ) -> Result<SerializedFileHeader, std::io::Error> {
+    ) -> Result<SerializedFileHeader, Error> {
         let mut header = SerializedFileHeader {
             m_MetadataSize: reader.read_u32::<B>()?,
             m_FileSize: reader.read_u32::<B>()? as i64,
@@ -34,7 +35,7 @@ impl SerializedFileHeader {
 
         if header.m_Version >= 9 {
             header.m_Endianess = reader.read_u8()?;
-            header.m_Reserved = reader.read_bytes_sized(3)?.as_slice().try_into().unwrap();
+            header.m_Reserved = reader.read_bytes_sized(3)?.as_slice().try_into()?;
         } else {
             reader.seek(std::io::SeekFrom::Current(
                 header.m_FileSize - header.m_MetadataSize as i64,
@@ -46,7 +47,7 @@ impl SerializedFileHeader {
             match header.m_Endianess {
                 0 => header.read_large_file_header::<T, LittleEndian>(reader, config)?,
                 1 => header.read_large_file_header::<T, BigEndian>(reader, config)?,
-                _ => panic!("Invalid endianess"),
+                _ => return Err(Error::InvalidEndianness),
             };
         };
         Ok(header)
@@ -56,7 +57,7 @@ impl SerializedFileHeader {
         &mut self,
         reader: &mut T,
         config: &crate::config::ExtractionConfig,
-    ) -> Result<(), std::io::Error> {
+    ) -> Result<(), Error> {
         self.m_MetadataSize = reader.read_u32::<B>()?;
         self.m_FileSize = reader.read_i64::<B>()?;
         self.m_DataOffset = reader.read_i64::<B>()?;
@@ -86,7 +87,7 @@ impl SerializedType {
         header: &SerializedFileHeader,
         m_EnableTypeTree: bool,
         isRefType: bool,
-    ) -> Result<SerializedType, std::io::Error> {
+    ) -> Result<SerializedType, Error> {
         let mut typ = SerializedType {
             m_ClassID: -1,
             m_IsStrippedType: false,
@@ -117,9 +118,9 @@ impl SerializedType {
                         >= SerializedFileFormatVersion::REFACTORED_CLASS_ID.bits()
                         && typ.m_ClassID == 114))
             {
-                typ.m_ScriptID = reader.read_bytes_sized(16)?.as_slice().try_into().unwrap();
+                typ.m_ScriptID = reader.read_bytes_sized(16)?.as_slice().try_into()?;
             }
-            typ.m_OldTypeHash = reader.read_bytes_sized(16)?.as_slice().try_into().unwrap();
+            typ.m_OldTypeHash = reader.read_bytes_sized(16)?.as_slice().try_into()?;
         }
 
         if m_EnableTypeTree {
@@ -127,7 +128,7 @@ impl SerializedType {
                 || header.m_Version == SerializedFileFormatVersion::UNKNOWN_10.bits()
             {
                 typ.m_Type =
-                    Some(TypeTreeNode::blob_from_reader::<T, B>(reader, header.m_Version).unwrap());
+                    Some(TypeTreeNode::blob_from_reader::<T, B>(reader, header.m_Version)?);
             } else {
                 typ.m_Type = Some(TypeTreeNode::from_reader::<T, B>(reader, header.m_Version)?);
             }
@@ -156,7 +157,7 @@ impl LocalSerializedObjectIdentifier {
     pub fn from_reader<T: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut T,
         header: &SerializedFileHeader,
-    ) -> Result<LocalSerializedObjectIdentifier, std::io::Error> {
+    ) -> Result<LocalSerializedObjectIdentifier, Error> {
         Ok(LocalSerializedObjectIdentifier {
             m_LocalSerializedFileIndex: reader.read_i32::<B>()?,
             m_LocalIdentifierInFile: if header.m_Version
@@ -187,7 +188,7 @@ impl ObjectInfo {
         header: &SerializedFileHeader,
         bigIDEnabled: Option<i32>,
         types: &[SerializedType],
-    ) -> Result<ObjectInfo, std::io::Error> {
+    ) -> Result<ObjectInfo, Error> {
         let mut objectInfo = ObjectInfo {
             m_PathID: 0,
             m_Offset: 0,
@@ -198,7 +199,7 @@ impl ObjectInfo {
             m_ScriptTypeIndex: None,
             m_Stripped: None,
         };
-        if bigIDEnabled.is_some() && bigIDEnabled.unwrap() > 0 {
+        if bigIDEnabled.is_some_and(|v| v > 0) {
             objectInfo.m_PathID = reader.read_i64::<B>()?;
         } else if header.m_Version < 14 {
             objectInfo.m_PathID = reader.read_i32::<B>()? as i64;
@@ -250,7 +251,7 @@ impl ScriptType {
     pub fn from_reader<T: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut T,
         header: &SerializedFileHeader,
-    ) -> Result<ScriptType, std::io::Error> {
+    ) -> Result<ScriptType, Error> {
         Ok(ScriptType {
             localSerializedFileIndex: reader.read_i32::<B>()?,
             localIdentifierInFile: if header.m_Version
@@ -276,7 +277,7 @@ impl FileIdentifier {
     pub fn from_reader<T: std::io::Read + std::io::Seek, B: ByteOrder>(
         reader: &mut T,
         header: &SerializedFileHeader,
-    ) -> Result<FileIdentifier, std::io::Error> {
+    ) -> Result<FileIdentifier, Error> {
         Ok(FileIdentifier {
             tempEmpty: if header.m_Version >= SerializedFileFormatVersion::UNKNOWN_6.bits() {
                 Some(reader.read_cstr()?)
@@ -306,11 +307,12 @@ pub struct ObjectHandler<'a, R: std::io::Read + std::io::Seek> {
     pub reader: &'a mut R,
 }
 
+#[allow(unused_macros)]
 macro_rules! parse_as {
     ($name:ident, $ret_typ: ty) => {
         paste::item! {
             #[doc = "Parses the object as" $name "."]
-            pub fn [< parse_as_ $name >](&mut self) -> Result<$ret_typ, std::io::Error>{
+            pub fn [< parse_as_ $name >](&mut self) -> Result<$ret_typ, Error>{
                 match self.get_typetree().cloned() {
                     Some(node) => {
                         self.reader
@@ -318,16 +320,10 @@ macro_rules! parse_as {
                         match self.file.m_Header.m_Endianess {
                             0 => node.[< read_as_ $name >]::<R, LittleEndian>(self.reader),
                             1 => node.[< read_as_ $name >]::<R, BigEndian>(self.reader),
-                            _ => Err(std::io::Error::new(
-                                std::io::ErrorKind::NotFound,
-                                "Unknown endianess!",
-                            )),
+                            _ => Err(Error::InvalidEndianness),
                         }
                     }
-                    _ => Err(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "Couldn't find typetree!",
-                    )),
+                    _ => Err(Error::TypeTreeNotFound),
                 }
             }
         }
@@ -349,7 +345,7 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectHandler<'a, R> {
         }
     }
 
-    pub fn get_raw_data(&mut self) -> Result<Vec<u8>, std::io::Error> {
+    pub fn get_raw_data(&mut self) -> Result<Vec<u8>, Error> {
         self.reader
             .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
         self.reader.read_bytes_sized(self.info.m_Size as usize)
@@ -362,29 +358,31 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectHandler<'a, R> {
         }
     }
 
-    pub fn peak_name(&mut self) -> Result<String, std::io::Error> {
+    pub fn peek_name(&mut self) -> Result<String, Error> {
         self.reader
-            .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))
-            .unwrap();
+            .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
 
         // todo - check against typeid
         match self.file.m_Header.m_Endianess {
             0 => self.reader.read_string::<LittleEndian>(),
             1 => self.reader.read_string::<BigEndian>(),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Unknown endianess!",
-            )),
+            _ => Err(Error::InvalidEndianness),
         }
     }
 
-    pub fn parse<T: serde::de::DeserializeOwned>(&mut self) -> std::io::Result<T> {
-        let transmission = self.parse_as_msgpack().unwrap();
-        Ok(rmp_serde::from_slice::<T>(&transmission.as_slice()).unwrap())
+    #[cfg(feature = "msgpack")]
+    pub fn parse<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, Error> {
+        let transmission = self.parse_as_msgpack()?;
+        Ok(rmp_serde::from_slice::<T>(&transmission.as_slice())?)
     }
 
+    #[cfg(feature = "json")]
     parse_as!(json, serde_json::Value);
-    parse_as!(yaml, Result<serde_yaml::Value, serde_yaml::Error>);
+
+    #[cfg(feature = "yaml")]
+    parse_as!(yaml, serde_yaml::Value);
+
+    #[cfg(feature = "msgpack")]
     parse_as!(msgpack, Vec<u8>);
 }
 
@@ -406,13 +404,13 @@ impl SerializedFile {
     pub fn from_reader<T: std::io::Read + std::io::Seek>(
         reader: &mut T,
         config: &crate::config::ExtractionConfig,
-    ) -> Result<SerializedFile, std::io::Error> {
+    ) -> Result<SerializedFile, Error> {
         let header = SerializedFileHeader::from_reader::<T, BigEndian>(reader, config)?;
 
         match header.m_Endianess {
             0 => SerializedFile::from_reader_endianed::<T, LittleEndian>(reader, header, config),
             1 => SerializedFile::from_reader_endianed::<T, BigEndian>(reader, header, config),
-            _ => panic!("Invalid endianess"),
+            _ => Err(Error::InvalidEndianness),
         }
     }
 
@@ -420,7 +418,7 @@ impl SerializedFile {
         reader: &mut T,
         header: SerializedFileHeader,
         config: &crate::config::ExtractionConfig,
-    ) -> Result<SerializedFile, std::io::Error>
+    ) -> Result<SerializedFile, Error>
     where
         T: std::io::Read + std::io::Seek,
         B: ByteOrder,
@@ -449,12 +447,8 @@ impl SerializedFile {
         // Read Types
         let typeCount = reader.read_i32::<B>()?;
         let m_Types: Vec<SerializedType> = (0..typeCount)
-            .map(|_| {
-                let x =
-                    SerializedType::from_reader::<T, B>(reader, &header, m_EnabledTypeTree, false);
-                x.unwrap()
-            })
-            .collect();
+            .map(|_| SerializedType::from_reader::<T, B>(reader, &header, m_EnabledTypeTree, false))
+            .collect::<Result<Vec<SerializedType>, Error>>()?;
 
         let m_bigIDEnabled = None;
         if header.m_Version >= SerializedFileFormatVersion::UNKNOWN_7.bits()
@@ -465,45 +459,39 @@ impl SerializedFile {
 
         // Read Objects
         let objectCount = reader.read_i32::<B>()?;
-        let m_Objects: Vec<ObjectInfo> = (0..objectCount)
-            .map(|_| {
-                ObjectInfo::from_reader::<T, B>(reader, &header, m_bigIDEnabled, &m_Types).unwrap()
-            })
-            .collect();
+        let m_Objects = (0..objectCount)
+            .map(|_| ObjectInfo::from_reader::<T, B>(reader, &header, m_bigIDEnabled, &m_Types))
+            .collect::<Result<Vec<ObjectInfo>, Error>>()?;
 
         let m_ScriptTypes = None;
         if header.m_Version >= SerializedFileFormatVersion::HAS_SCRIPT_TYPE_INDEX.bits() {
             let scriptCount = reader.read_i32::<B>()?;
-            let m_ScriptTypes: Option<Vec<LocalSerializedObjectIdentifier>> = Some(
+            let m_ScriptTypes = Some(
                 (0..scriptCount)
-                    .map(|_| {
-                        LocalSerializedObjectIdentifier::from_reader::<T, B>(reader, &header)
-                            .unwrap()
-                    })
-                    .collect(),
+                    .map(|_| LocalSerializedObjectIdentifier::from_reader::<T, B>(reader, &header))
+                    .collect::<Result<Vec<LocalSerializedObjectIdentifier>, Error>>()?
             );
         }
 
         let externalsCount = reader.read_i32::<B>()?;
         let m_Externals = (0..externalsCount)
-            .map(|_| FileIdentifier::from_reader::<T, B>(reader, &header).unwrap())
-            .collect();
+            .map(|_| FileIdentifier::from_reader::<T, B>(reader, &header))
+            .collect::<Result<Vec<FileIdentifier>, Error>>()?;
 
         let m_RefTypes = None;
         if header.m_Version >= SerializedFileFormatVersion::SUPPORTS_REF_OBJECT.bits() {
             let refTypesCount = reader.read_i32::<B>()?;
-            let m_RefTypes: Option<Vec<SerializedType>> = Some(
+            let m_RefTypes = Some(
                 (0..refTypesCount)
-                    .map(|_| {
+                    .map(|_|
                         SerializedType::from_reader::<T, B>(
                             reader,
                             &header,
                             m_EnabledTypeTree,
                             true,
                         )
-                        .unwrap()
-                    })
-                    .collect(),
+                    )
+                    .collect::<Result<Vec<SerializedType>, Error>>()?,
             );
         }
 
@@ -545,7 +533,7 @@ impl UnityFile for SerializedFile {
     fn from_reader<T: std::io::Read + std::io::Seek>(
         reader: &mut T,
         config: &ExtractionConfig,
-    ) -> Result<Self, std::io::Error>
+    ) -> Result<Self, Error>
     where
         Self: Sized,
     {

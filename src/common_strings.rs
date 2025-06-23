@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use std::collections::BTreeMap;
 
 lazy_static! {
-    pub static ref COMMONSTRING: BTreeMap<u32, &'static str> = [
+    pub static ref COMMON_STRINGS: BTreeMap<u32, &'static str> = [
         (0, "AABB"),
         (5, "AnimationClip"),
         (19, "AnimationCurve"),

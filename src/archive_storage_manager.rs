@@ -1,31 +1,25 @@
 // credits to: https://github.com/Razmoth/CNStudio/blob/master/AssetStudio/CNUnity.cs
-use crate::read_ext::ReadUrexExt;
-use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
-use byteorder::{BigEndian, ReadBytesExt};
-use std::io::{Read, Result, Seek, SeekFrom};
-type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
+
+use crate::Error;
 
 // #$unity3dchina!@
 const UNITY3D_SIGNATURE: [u8; 16] = [
     35, 36, 117, 110, 105, 116, 121, 51, 100, 99, 104, 105, 110, 97, 33, 64,
 ];
 
-fn decrypt_key(key: [u8; 16], data: [u8; 16], archive_key: [u8; 16]) -> [u8; 16] {
-    let mut _archive_key: [u8; 16] = [0; 16];
-    _archive_key.copy_from_slice(&archive_key);
-    let mut _key: [u8; 16] = [0; 16];
-    _key.copy_from_slice(&key);
-    let _iv: [u8; 16] = [0; 16];
+#[cfg(feature = "unitycn_encryption")]
+fn decrypt_key(mut key: [u8; 16], data: [u8; 16], archive_key: [u8; 16]) -> [u8; 16] {
+    use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+    type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 
-    let encryptor = Aes128CbcEnc::new(&_archive_key.into(), &_iv.into());
-    encryptor
-        .encrypt_padded_mut::<NoPadding>(&mut _key, 16)
-        .unwrap();
+    let iv = [0u8; 16];
+    let encryptor = Aes128CbcEnc::new(&archive_key.into(), &iv.into());
+    encryptor.encrypt_padded_mut::<NoPadding>(&mut key, 16).unwrap();
 
     for i in 0..16 {
-        _key[i] ^= data[i];
+        key[i] ^= data[i];
     }
-    _key
+    key
 }
 
 fn to_uint4_array(source: &[u8; 16], offset: usize) -> [u8; 32] {
@@ -43,23 +37,30 @@ pub struct ArchiveStorageDecryptor {
 }
 
 impl ArchiveStorageDecryptor {
-    pub fn from_reader<T: Read + Seek>(reader: &mut T, archive_key: [u8; 16]) -> Result<Self> {
-        let unknown = reader.read_u32::<BigEndian>().unwrap();
+    #[cfg(feature = "unitycn_encryption")]
+    pub fn from_reader<T: std::io::Read + std::io::Seek>(reader: &mut T, archive_key: [u8; 16]) -> Result<Self, Error> {
+        use crate::read_ext::ReadUrexExt;
+        use byteorder::{BigEndian, ReadBytesExt};
+        use std::io::SeekFrom;
+
+        let unknown = reader.read_u32::<BigEndian>()?;
 
         let info_bytes: [u8; 16] = reader.read_bytes_sized(16)?.try_into().unwrap();
         let info_key: [u8; 16] = reader.read_bytes_sized(16)?.try_into().unwrap();
-        reader.seek(SeekFrom::Current(1)).unwrap();
+        reader.seek(SeekFrom::Current(1))?;
 
         let signature_bytes: [u8; 16] = reader.read_bytes_sized(16)?.try_into().unwrap();
         let signature_key: [u8; 16] = reader.read_bytes_sized(16)?.try_into().unwrap();
-        reader.seek(SeekFrom::Current(1)).unwrap();
+        reader.seek(SeekFrom::Current(1))?;
 
         let signature: [u8; 16] = decrypt_key(signature_key, signature_bytes, archive_key);
-        assert_eq!(signature, UNITY3D_SIGNATURE);
+        if signature != UNITY3D_SIGNATURE {
+            return Err(Error::UnknownSignature);
+        }
 
         let data = decrypt_key(info_key, info_bytes, archive_key);
         let data = to_uint4_array(&data, 0);
-        let index: [u8; 16] = data[0..16].try_into().unwrap();
+        let index: [u8; 16] = data[0..16].try_into()?;
         let mut sub: [u8; 16] = [0; 16];
         for j in 0..4 {
             for i in 0..4 {
@@ -70,7 +71,7 @@ impl ArchiveStorageDecryptor {
     }
 
     // Decrypts a StorageBlock in place
-    pub fn decrypt_block(&self, bytes: &mut [u8], size: usize, index: usize) -> Result<()> {
+    pub fn decrypt_block(&self, bytes: &mut [u8], size: usize, index: usize) -> Result<(), Error> {
         let mut index = index;
         let mut offset = 0;
 
@@ -102,7 +103,7 @@ impl ArchiveStorageDecryptor {
         (bytes[offset], offset + 1, index + 1)
     }
 
-    fn decrypt(&self, bytes: &mut [u8], offset: usize, index: usize, end: usize) -> Result<usize> {
+    fn decrypt(&self, bytes: &mut [u8], offset: usize, index: usize, end: usize) -> Result<usize, Error> {
         let (cur_byte, mut offset, mut index) = self.decrypt_byte(bytes, offset, index);
         // u24, split into u16 and u8 here for easier handling
         let mut byte_high: u16 = (cur_byte >> 4) as u16;
