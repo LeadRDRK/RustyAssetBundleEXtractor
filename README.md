@@ -1,19 +1,29 @@
 # RustyAssetBundleEXtractor (rabex) [![Build Status]][actions] [![Latest Version]][crates.io] [![Docs]][docs.rs] [![License_MIT]][license_mit] [![License_APACHE]][license_apache] 
 
-[Build Status]: https://img.shields.io/github/actions/workflow/status/UniversalGameExtraction/RustyAssetBundleEXtractor/ci.yml?branch=main
-[actions]: https://github.com/UniversalGameExtraction/RustyAssetBundleEXtractor/actions?query=branch%3Amain
+[Build Status]: https://img.shields.io/github/actions/workflow/status/LeadRDRK/RustyAssetBundleEXtractor/ci.yml?branch=main
+[actions]: https://github.com/LeadRDRK/RustyAssetBundleEXtractor/actions?query=branch%3Amain
 [Latest Version]: https://img.shields.io/crates/v/RustyAssetBundleEXtractor.svg
 [crates.io]: https://crates.io/crates/rabex
 [Docs]: https://docs.rs/rabex/badge.svg
 [docs.rs]: https://docs.rs/crate/rabex/
 [License_MIT]: https://img.shields.io/badge/License-MIT-yellow.svg
-[license_mit]: https://raw.githubusercontent.com/UniversalGameExtraction/RustyAssetBundleEXtractor/main/LICENSE-MIT
+[license_mit]: https://raw.githubusercontent.com/LeadRDRK/RustyAssetBundleEXtractor/main/LICENSE-MIT
 [License_APACHE]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
-[license_apache]: https://raw.githubusercontent.com/UniversalGameExtraction/RustyAssetBundleEXtractor/main/LICENSE-APACHE
+[license_apache]: https://raw.githubusercontent.com/LeadRDRK/RustyAssetBundleEXtractor/main/LICENSE-APACHE
 
 
-A work-in-progress extractor and patcher for Unity Engine asset files.
-Currently it can do about nothing, so please check back later.
+This is a fork of a work-in-progress extractor and patcher for Unity Engine asset files.
+
+This fork does not aim to add any features to the library. It is not intended to replace the original project, and exists solely due to the original's lack of active development and experimental status. Instead, it improves upon the things that have already been done and makes the library usable in production in its current state. Particularly:
+- No more unwrap/panic when encountering malformed data or an unimplemented feature.
+- Proper error handling.
+- Compression and serialization features are made optional.
+
+### Feature flags
+All of these features are enabled by default.
+- Compression: `lzma`, `lz4`, `brotli`
+- Serialization: `json`, `yaml`, `msgpack`
+- Encryption: `unitycn_encryption`
 
 ## Dependencies
 
