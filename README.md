@@ -1,60 +1,37 @@
-# RustyAssetBundleEXtractor (rabex) [![Build Status]][actions] [![Latest Version]][crates.io] [![Docs]][docs.rs] [![License_MIT]][license_mit] [![License_APACHE]][license_apache] 
+# runirip [![Build Status]][actions] [![Latest Version]][crates.io] [![Docs]][docs.rs] [![License_MIT]][license_mit] [![License_APACHE]][license_apache] 
 
-[Build Status]: https://img.shields.io/github/actions/workflow/status/LeadRDRK/RustyAssetBundleEXtractor/ci.yml?branch=main
-[actions]: https://github.com/LeadRDRK/RustyAssetBundleEXtractor/actions?query=branch%3Amain
-[Latest Version]: https://img.shields.io/crates/v/lead_rabex
-[crates.io]: https://crates.io/crates/lead_rabex
-[Docs]: https://docs.rs/lead_rabex/badge.svg
-[docs.rs]: https://docs.rs/crate/lead_rabex/
+[Build Status]: https://img.shields.io/github/actions/workflow/status/LeadRDRK/runirip/ci.yml?branch=main
+[actions]: https://github.com/LeadRDRK/runirip/actions?query=branch%3Amain
+[Latest Version]: https://img.shields.io/crates/v/runirip
+[crates.io]: https://crates.io/crates/runirip
+[Docs]: https://docs.rs/runirip/badge.svg
+[docs.rs]: https://docs.rs/crate/runirip/
 [License_MIT]: https://img.shields.io/badge/License-MIT-yellow.svg
-[license_mit]: https://raw.githubusercontent.com/LeadRDRK/RustyAssetBundleEXtractor/main/LICENSE-MIT
+[license_mit]: https://raw.githubusercontent.com/LeadRDRK/runirip/main/LICENSE-MIT
 [License_APACHE]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
-[license_apache]: https://raw.githubusercontent.com/LeadRDRK/RustyAssetBundleEXtractor/main/LICENSE-APACHE
+[license_apache]: https://raw.githubusercontent.com/LeadRDRK/runirip/main/LICENSE-APACHE
 
 
-This is a fork of a work-in-progress extractor and patcher for Unity Engine asset files.
+runirip is a Rust library for manipulating various Unity asset file formats. It is a fork of [rabex](https://github.com/UniversalGameExtraction/RustyAssetBundleEXtractor).
 
-This fork does not aim to add any features to the library. It is not intended to replace the original project, and exists solely due to the original's lack of active development and experimental status. Instead, it improves upon the things that have already been done and makes the library usable in production in its current state. Particularly:
-- No more unwrap/panic when encountering malformed data or an unimplemented feature.
-- Proper error handling.
-- Compression and serialization features are made optional.
-
-### Feature flags
+## Feature flags
 All of these features are enabled by default.
 - Compression: `lzma`, `lz4`, `brotli`
-- Serialization: `json`, `yaml`, `msgpack`
 - Encryption: `unitycn_encryption`
-
-## Dependencies
-
-This projects uses following dependencies:
-
-- Compression & Decompression:
-
-  - BundleFiles blocks:
-    - [lzma-rs](https://crates.io/crates/lzma-rs)
-    - [lz4_flex](lz4_flex)
-  - WebFile:
-    - [libflate](https://crates.io/crates/libflate)
-    - [brotli](https://crates.io/crates/brotli)
-
-- Other:
-  - [bitflags](https://crates.io/crates/bitflags)
-  - [num_enum](https://crates.io/crates/num_enum)
 
 ## Examples
 
-### parsing a normal BundleFile and dumping its objects
+### Parsing an asset bundle and dumping its objects
 
 ```rust
 use std::{
     fs::{DirBuilder, File},
-    io::{Seek, Write},
+    io::{Seek, Write, BufWriter},
     path::Path,
 };
 
-use lead_rabex::files::{BundleFile, SerializedFile};
-use lead_rabex::config::ExtractionConfig;
+use runirip::files::{BundleFile, SerializedFile};
+use runirip::config::ExtractionConfig;
 
 let mut reader = File::open(fp).unwrap();
 let export_dir = Path::new("dump");
@@ -77,15 +54,15 @@ for directory in &bundle.m_DirectoryInfo {
     match SerializedFile::from_reader(&mut bundle.m_BlockReader, &config) {
         Ok(serialized) => {
             // iterate over objects
-            for object in &serialized.m_Objects {
+            for object_info in &serialized.m_Objects {
                 // get a helper object to parse the object
-                let mut handler =
-                    serialized.get_object_handler(object, &mut bundle.m_BlockReader);
+                let mut reader =
+                    serialized.get_object_reader(object_info, &mut bundle.m_BlockReader);
 
                 // try to get the name
-                let name = match handler.peak_name() {
-                    Ok(name) => format!("{}_{}", object.m_PathID, name),
-                    Err(_) => format!("{}", object.m_PathID),
+                let name = match reader.peek_name() {
+                    Ok(name) => format!("{}_{}", object_info.m_PathID, name),
+                    Err(_) => format!("{}", object_info.m_PathID),
                 };
 
                 // ensure that the parent directory exists
@@ -95,24 +72,19 @@ for directory in &bundle.m_DirectoryInfo {
                     .create(dst_path.parent().unwrap())
                     .unwrap_or_else(|_| panic!("Failed to create {:?}", dst_path.parent()));
 
-                // parse the object as json
-                let json = handler.parse_as_json().unwrap();
-                // println!("{:?}", json);
-                File::create(format!("{}.json", dst_path.to_string_lossy()))
-                    .unwrap()
-                    .write_all(json.to_string().as_bytes())
-                    .unwrap();
+                // read the object
+                let object = reader.read().unwrap();
 
-                // parse the object as yaml
-                let yaml = handler.parse_as_yaml().unwrap().unwrap();
-                // println!("{:?}", yaml);
-                File::create(format!("{}.yaml", dst_path.to_string_lossy()))
-                    .unwrap()
-                    .write_all(serde_yaml::to_string(&yaml).unwrap().as_bytes())
-                    .unwrap();
+                // export as json
+                let json_file = File::create(format!("{}.json", dst_path.to_string_lossy())).unwrap();
+                serde_json::to_writer_pretty(&mut BufWriter::new(json_file), &object).unwrap();
+
+                // export as yaml
+                let yaml_file = File::create(format!("{}.yaml", dst_path.to_string_lossy())).unwrap();
+                serde_yaml::to_writer(&mut BufWriter::new(yaml_file), &object).unwrap();
 
                 // parse the object as msgpack
-                let msgpack = handler.parse_as_msgpack().unwrap();
+                let msgpack = rmp_serde::to_vec(&object).unwrap();
                 File::create(format!("{}.msgpack", dst_path.to_string_lossy()))
                     .unwrap()
                     .write_all(&msgpack)
@@ -120,9 +92,10 @@ for directory in &bundle.m_DirectoryInfo {
 
                 // serialize as actual class
                 // note: a small part of the object classes isn't implemented yet
-                if object.m_ClassID == lead_rabex::objects::map::AssetBundle {
-                    let ab = handler
-                        .parse::<lead_rabex::objects::classes::AssetBundle>()
+                // TODO: cant actually do this now
+                if object.m_ClassID == runirip::objects::map::AssetBundle {
+                    let ab = reader
+                        .parse::<runirip::objects::classes::AssetBundle>()
                         .unwrap();
                     println!("{:?}", ab);
                 }
@@ -139,18 +112,18 @@ for directory in &bundle.m_DirectoryInfo {
 }
 ```
 
-### parsing a by UnityCN encrypted BundleFile and handling stripped Unity version
+### Reading a UnityCN encrypted asset bundle
 
-```rust
+```rust"
+use runirip::files::BundleFile;
+
 let mut reader = File::open(fp).unwrap();
 let config = ExtractionConfig {
     unitycn_key: Some("Decryption Key".as_bytes().try_into().unwrap()),
     fallback_unity_version: "2020.3.0f1".to_owned(),
 };
-let bundle = crate::files::BundleFile::from_reader(&mut reader, &config).unwrap();
+let bundle = BundleFile::from_reader(&mut reader, &config).unwrap();
 ```
-
-### reading a UnityCN encrypted BundleFile
 
 ## Notes
 
@@ -176,23 +149,11 @@ let bundle = crate::files::BundleFile::from_reader(&mut reader, &config).unwrap(
   - [ ] 100% Coverage
 
 - Other:
-  - [ ] feature config
-
-## Getting Help
-
-TODO:
-
-- [ ] Docs
-- [ ] GitHub Issues and Discussion
-- [ ] Discord server
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+  - [x] Feature config
 
 ## License
 
-RustyAssetBundleEXtractor is primarily distributed under the terms of both the MIT license and the
+runirip is primarily distributed under the terms of both the MIT license and the
 Apache License (Version 2.0).
 
 See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT), and

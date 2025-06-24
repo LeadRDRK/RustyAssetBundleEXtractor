@@ -1,5 +1,5 @@
 [package]
-name = "lead_rabex"
+name = "runirip"
 version = "0.1.0"
 edition = "2021"
 include = [
@@ -10,10 +10,10 @@ include = [
     "LICENSE-MIT",
     "COPYRIGHT"
 ]
-authors = ["Rudolf Kolbe <rkolbe96@gmail.com>", "LeadRDRK"]
-description = "[Fork] wip UnityRustExtractor and patcher"
+authors = ["LeadRDRK", "Rudolf Kolbe <rkolbe96@gmail.com>"]
+description = "Unity asset file manipulation library"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/LeadRDRK/RustyAssetBundleEXtractor"
+repository = "https://github.com/LeadRDRK/runirip"
 
 
 [dependencies]
