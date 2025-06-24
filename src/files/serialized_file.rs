@@ -1,9 +1,9 @@
 use super::UnityFile;
-use crate::type_tree::TypeTreeNode;
-use crate::Error;
 use crate::{
     config::ExtractionConfig,
     read_ext::{ReadSeekUrexExt, ReadUrexExt},
+    Error,
+    TypeTreeNode, TypeTreeValue
 };
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
@@ -300,44 +300,21 @@ impl FileIdentifier {
 }
 
 #[derive(Debug)]
-pub struct ObjectHandler<'a, R: std::io::Read + std::io::Seek> {
+pub struct ObjectReader<'a, R: std::io::Read + std::io::Seek> {
     pub info: &'a ObjectInfo,
     pub typ: Option<&'a SerializedType>,
     pub file: &'a SerializedFile,
     pub reader: &'a mut R,
 }
 
-#[allow(unused_macros)]
-macro_rules! parse_as {
-    ($name:ident, $ret_typ: ty) => {
-        paste::item! {
-            #[doc = "Parses the object as" $name "."]
-            pub fn [< parse_as_ $name >](&mut self) -> Result<$ret_typ, Error>{
-                match self.get_typetree().cloned() {
-                    Some(node) => {
-                        self.reader
-                            .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
-                        match self.file.m_Header.m_Endianess {
-                            0 => node.[< read_as_ $name >]::<R, LittleEndian>(self.reader),
-                            1 => node.[< read_as_ $name >]::<R, BigEndian>(self.reader),
-                            _ => Err(Error::InvalidEndianness),
-                        }
-                    }
-                    _ => Err(Error::TypeTreeNotFound),
-                }
-            }
-        }
-    };
-}
-
-impl<'a, R: std::io::Read + std::io::Seek> ObjectHandler<'a, R> {
+impl<'a, R: std::io::Read + std::io::Seek> ObjectReader<'a, R> {
     pub fn new(
         info: &'a ObjectInfo,
         typ: Option<&'a SerializedType>,
         file: &'a SerializedFile,
         reader: &'a mut R,
     ) -> Self {
-        ObjectHandler {
+        ObjectReader {
             info,
             typ,
             file,
@@ -351,11 +328,10 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectHandler<'a, R> {
         self.reader.read_bytes_sized(self.info.m_Size as usize)
     }
 
-    fn get_typetree(&self) -> Option<&TypeTreeNode> {
-        match self.typ {
-            Some(typ) => typ.m_Type.as_ref(),
-            _ => None,
-        }
+    pub fn get_type_tree(&self) -> Option<&TypeTreeNode> {
+        self.typ
+            .map(|t| t.m_Type.as_ref())
+            .flatten()
     }
 
     pub fn peek_name(&mut self) -> Result<String, Error> {
@@ -370,20 +346,19 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectHandler<'a, R> {
         }
     }
 
-    #[cfg(feature = "msgpack")]
-    pub fn parse<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, Error> {
-        let transmission = self.parse_as_msgpack()?;
-        Ok(rmp_serde::from_slice::<T>(&transmission.as_slice())?)
+    pub fn read(&mut self) -> Result<TypeTreeValue, Error>{
+        let node = self.typ
+            .map(|t| t.m_Type.as_ref())
+            .flatten()
+            .ok_or(Error::TypeTreeNotFound)?;
+
+        self.reader.seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
+        match self.file.m_Header.m_Endianess {
+            0 => node.read::<R, LittleEndian>(self.reader),
+            1 => node.read::<R, BigEndian>(self.reader),
+            _ => Err(Error::InvalidEndianness),
+        }
     }
-
-    #[cfg(feature = "json")]
-    parse_as!(json, serde_json::Value);
-
-    #[cfg(feature = "yaml")]
-    parse_as!(yaml, serde_yaml::Value);
-
-    #[cfg(feature = "msgpack")]
-    parse_as!(msgpack, Vec<u8>);
 }
 
 #[derive(Debug, Clone)]
@@ -515,17 +490,17 @@ impl SerializedFile {
         })
     }
 
-    pub fn get_object_handler<'a, R: std::io::Read + std::io::Seek>(
+    pub fn get_object_reader<'a, R: std::io::Read + std::io::Seek>(
         &'a self,
-        objectinfo: &'a ObjectInfo,
+        object_info: &'a ObjectInfo,
         reader: &'a mut R,
-    ) -> ObjectHandler<'a, R> {
+    ) -> ObjectReader<'a, R> {
         let mut typ = None;
         if self.m_Header.m_Version >= SerializedFileFormatVersion::REFACTORED_CLASS_ID.bits() {
-            typ = Some(&self.m_Types[objectinfo.m_TypeID as usize]);
+            typ = Some(&self.m_Types[object_info.m_TypeID as usize]);
         }
 
-        ObjectHandler::new(objectinfo, typ, self, reader)
+        ObjectReader::new(object_info, typ, self, reader)
     }
 }
 

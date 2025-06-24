@@ -4,6 +4,6 @@ mod unity_file;
 mod web_file;
 
 pub use bundle_file::BundleFile;
-pub use serialized_file::{SerializedFile, ObjectHandler};
+pub use serialized_file::{SerializedFile, ObjectReader};
 // pub use web_file::WebFile;
 pub use unity_file::UnityFile;

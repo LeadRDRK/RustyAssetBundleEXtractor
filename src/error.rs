@@ -71,27 +71,6 @@ impl From<std::array::TryFromSliceError> for Error {
     }
 }
 
-#[cfg(feature = "yaml")]
-impl From<serde_yaml::Error> for Error {
-    fn from(e: serde_yaml::Error) -> Self {
-        Self::InvalidValue(e.to_string())
-    }
-}
-
-#[cfg(feature = "msgpack")]
-impl From<rmp::encode::ValueWriteError> for Error {
-    fn from(e: rmp::encode::ValueWriteError) -> Self {
-        Self::IoError(e.into())
-    }
-}
-
-#[cfg(feature = "msgpack")]
-impl From<rmp_serde::decode::Error> for Error {
-    fn from(e: rmp_serde::decode::Error) -> Self {
-        Self::InvalidValue(e.to_string())
-    }
-}
-
 #[cfg(feature = "lzma")]
 impl From<lzma_rs::error::Error> for Error {
     fn from(e: lzma_rs::error::Error) -> Self {

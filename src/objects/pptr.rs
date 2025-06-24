@@ -7,14 +7,14 @@ pub struct PPtr {
 }
 
 impl PPtr {
-    fn get_object_handler<'a, R: std::io::Read + std::io::Seek>(
+    fn get_object_reader<'a, R: std::io::Read + std::io::Seek>(
         &'a self,
         asset: &'a crate::files::SerializedFile,
         reader: &'a mut R,
-    ) -> Option<crate::files::ObjectHandler<'a, R>> {
+    ) -> Option<crate::files::ObjectReader<'a, R>> {
         asset.m_Objects
             .iter()
             .find(|x| x.m_PathID == self.m_PathID)
-            .map(|object_info| asset.get_object_handler(object_info, reader))
+            .map(|object_info| asset.get_object_reader(object_info, reader))
     }
 }
