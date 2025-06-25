@@ -1,5 +1,5 @@
 use crate::{
-    archive_storage_manager::ArchiveStorageDecryptor,
+    unitycn::ArchiveStorageDecryptor,
     config::ExtractionConfig,
     files::{SerializedFile, unity_file::{FileEntry, UnityFile}},
     read_ext::{ReadSeekUrexExt, ReadUrexExt}, Error,

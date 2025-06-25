@@ -20,7 +20,9 @@ pub enum Error {
     UnknownSignature,
     InvalidValue(String),
     DecompressionError(String),
-    NoUnityCNKey
+    NoUnityCNKey,
+
+    Message(String)
 }
 
 impl Display for Error {
@@ -40,7 +42,9 @@ impl Display for Error {
             Self::UnknownSignature => f.write_str("Unknown signature"),
             Self::InvalidValue(reason) => write!(f, "Invalid value: {reason}"),
             Self::DecompressionError(reason) => write!(f, "Decompression error: {reason}"),
-            Self::NoUnityCNKey => f.write_str("UnityCN decryption key was not provided")
+            Self::NoUnityCNKey => f.write_str("UnityCN decryption key was not provided"),
+
+            Self::Message(reason) => f.write_str(&reason)
         }
     }
 }
@@ -82,5 +86,12 @@ impl From<lzma_rs::error::Error> for Error {
 impl From<lz4_flex::block::DecompressError> for Error {
     fn from(e: lz4_flex::block::DecompressError) -> Self {
         Self::DecompressionError(e.to_string())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::de::Error for Error {
+    fn custom<T: Display>(msg: T) -> Self {
+        Error::Message(msg.to_string())
     }
 }

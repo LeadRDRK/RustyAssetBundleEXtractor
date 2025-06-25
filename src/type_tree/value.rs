@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+#[cfg(feature = "serde")]
+use serde::{de::IntoDeserializer, Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(untagged))]
 pub enum Value {
     SInt8(i8),
     UInt8(u8),
@@ -24,4 +25,13 @@ pub enum Value {
     Map(Vec<(Value, Value)>),
     Array(Vec<Value>),
     Class(HashMap<String, Value>)
+}
+
+#[cfg(feature = "serde")]
+impl<'de> IntoDeserializer<'de, crate::Error> for &'de Value {
+    type Deserializer = super::Deserializer<'de>;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        Self::Deserializer::new(self)
+    }
 }

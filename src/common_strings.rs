@@ -1,8 +1,6 @@
-use lazy_static::lazy_static;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::LazyLock};
 
-lazy_static! {
-    pub static ref COMMON_STRINGS: BTreeMap<u32, &'static str> = [
+pub static COMMON_STRINGS: LazyLock<BTreeMap<u32, &'static str>> = LazyLock::new(|| [
         (0, "AABB"),
         (5, "AnimationClip"),
         (19, "AnimationCurve"),
@@ -114,5 +112,5 @@ lazy_static! {
     ]
     .iter()
     .copied()
-    .collect();
-}
+    .collect()
+);

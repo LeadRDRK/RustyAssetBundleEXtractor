@@ -1,5 +1,5 @@
-#![allow(non_camel_case_types)]
-use crate::objects::PPtr;
+#![allow(non_camel_case_types, non_snake_case)]
+use crate::PPtr;
 use serde::{Deserialize, Serialize};
 
 /// AABB is a sub class of the Unity engine since version 3.4.0.

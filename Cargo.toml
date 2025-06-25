@@ -2,23 +2,16 @@
 name = "runirip"
 version = "0.1.0"
 edition = "2021"
-include = [
-    "src/*",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE-APACHE",
-    "LICENSE-MIT",
-    "COPYRIGHT"
-]
 authors = ["LeadRDRK", "Rudolf Kolbe <rkolbe96@gmail.com>"]
-description = "Unity asset file manipulation library"
+description = "Unity asset files manipulation library"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/LeadRDRK/runirip"
 
 
 [dependencies]
+runirip-objects = { version = "0.1.0", optional = true, path = "./runirip-objects" }
+
 byteorder = "1.5.0"
-lazy_static = "1.5.0"
 paste = "1.0.15"
 bitflags = "2.9.1"
 num_enum = "0.7.4"
@@ -33,14 +26,22 @@ aes = { version = "0.8.4", optional = true }
 cbc = { version = "0.1.2", optional = true }
 
 # Object Serialization & Export
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 
 [features]
-default = ["lzma", "brotli", "lz4", "unitycn_encryption"]
+default = ["lzma", "brotli", "lz4", "unitycn_encryption", "objects", "serde"]
 
 lzma = ["dep:lzma-rs"]
 brotli = ["dep:brotli"]
 lz4 = ["dep:lz4_flex"]
 
 unitycn_encryption = ["dep:aes", "dep:cbc"]
+objects = ["dep:runirip-objects", "dep:serde"]
+serde = ["dep:serde"]
+
+[workspace]
+resolver = "2"
+members = [
+    "runirip-objects"
+]

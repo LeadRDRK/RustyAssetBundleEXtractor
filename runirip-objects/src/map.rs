@@ -1,6 +1,5 @@
 #![allow(non_upper_case_globals)]
-use lazy_static::lazy_static;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::LazyLock};
 
 pub const UnknownType: i32 = -1;
 pub const Object: i32 = 0;
@@ -371,8 +370,7 @@ pub const VisualEffect: i32 = 2083052967;
 pub const LocalizationAsset: i32 = 2083778819;
 pub const ScriptedImporter: i32 = 2089858483;
 
-lazy_static! {
-    pub static ref CLASS_ID_NAME: BTreeMap<i32, &'static str> = [
+pub static CLASS_ID_NAME: LazyLock<BTreeMap<i32, &'static str>> = LazyLock::new(|| [
         (UnknownType, "UnknownType"),
         (Object, "Object"),
         (GameObject, "GameObject"),
@@ -780,5 +778,5 @@ lazy_static! {
     ]
     .iter()
     .copied()
-    .collect();
-}
+    .collect()
+);
