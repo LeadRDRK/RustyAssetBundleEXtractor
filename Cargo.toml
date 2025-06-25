@@ -9,24 +9,24 @@ repository = "https://github.com/LeadRDRK/runirip"
 
 
 [dependencies]
-runirip-objects = { version = "0.1.0", optional = true, path = "./runirip-objects" }
+runirip-objects = { version = "0", optional = true, path = "./runirip-objects" }
 
-byteorder = "1.5.0"
-paste = "1.0.15"
-bitflags = "2.9.1"
-num_enum = "0.7.4"
+byteorder = "1.5"
+paste = "1.0"
+bitflags = "2.9"
+num_enum = "0.7"
 
 # Compression
-lzma-rs = { version = "0.3.0", optional = true }
-brotli = { version = "8.0.1", optional = true }
+lzma-rs = { version = "0.3", optional = true }
+brotli = { version = "8.0", optional = true }
 lz4_flex = { version = "0.11", optional = true }
 
 # UnityCN Encryption
-aes = { version = "0.8.4", optional = true }
-cbc = { version = "0.1.2", optional = true }
+aes = { version = "0.8", optional = true }
+cbc = { version = "0.1", optional = true }
 
 # Object Serialization & Export
-serde = { version = "1.0.219", features = ["derive"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
 
 
 [features]
