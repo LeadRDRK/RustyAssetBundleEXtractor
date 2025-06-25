@@ -46,6 +46,7 @@ pub enum CompressionType {
     Lzham = 4,
 }
 
+#[derive(Debug)]
 pub struct BundleFileHeader {
     signature: String,
     version: u32,
@@ -100,6 +101,7 @@ impl BundleFileHeader {
     }
 }
 
+#[derive(Debug)]
 pub struct StorageBlock {
     compressed_size: u32,
     uncompressed_size: u32,
@@ -295,12 +297,19 @@ impl BundleFile {
             reader.align(16)?;
         }
 
-        let block_data: Vec<u8> = m_BlocksInfo
+        let block_data_size: u32 = m_BlocksInfo
             .iter()
-            .enumerate()
-            .map(|(i, block)| Ok(self.decompress_block(reader, block, i)?))
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?
-            .concat();
+            .map(|block| block.uncompressed_size)
+            .sum();
+        let mut block_data = vec![0u8; block_data_size as usize];
+
+        let mut block_offset = 0usize;
+        for (i, block) in m_BlocksInfo.iter().enumerate() {
+            let end = block_offset + block.uncompressed_size as usize;
+            self.decompress_block_into(reader, block, i, &mut block_data[block_offset..end])?;
+            block_offset = end;
+        }
+
         let block_reader = Cursor::new(block_data);
         Ok((m_DirectoryInfo, block_reader))
     }
@@ -320,12 +329,13 @@ impl BundleFile {
             .collect()
     }
 
-    fn decompress_block<T: Read + Seek>(
+    fn decompress_block_into<T: Read + Seek>(
         &mut self,
         reader: &mut T,
         block: &StorageBlock,
         index: usize,
-    ) -> Result<Vec<u8>, Error> {
+        output: &mut [u8]
+    ) -> Result<(), Error> {
         #[allow(unused_mut)]
         let mut compressed = reader
             .read_bytes_sized(block.compressed_size as usize)?;
@@ -334,10 +344,9 @@ impl BundleFile {
             CompressionType::Lzma => {
                 #[cfg(feature = "lzma")]
                 {
-                    let mut compressed_reader = std::io::Cursor::new(&compressed);
-                    let mut uncompressed = vec![0; block.uncompressed_size as usize];
-                    lzma_rs::lzma_decompress(&mut compressed_reader, &mut uncompressed)?;
-                    Ok(uncompressed)
+                    let mut compressed_reader = Cursor::new(&compressed);
+                    lzma_rs::lzma_decompress(&mut compressed_reader, &mut Cursor::new(output))?;
+                    Ok(())
                 }
 
                 #[cfg(not(feature = "lzma"))]
@@ -360,7 +369,8 @@ impl BundleFile {
                         #[cfg(not(feature = "unitycn_encryption"))]
                         return Err(Error::FeatureDisabled("unitycn_encryption"))
                     }
-                    Ok(lz4_flex::block::decompress(&compressed, block.uncompressed_size as usize)?)
+                    lz4_flex::block::decompress_into(&compressed, output)?;
+                    Ok(())
                 }
 
                 #[cfg(not(feature = "lz4"))]
@@ -369,8 +379,22 @@ impl BundleFile {
             CompressionType::Lzham => {
                 Err(Error::Unimplemented("LZHAM is not supported"))
             }
-            CompressionType::None => Ok(compressed),
+            CompressionType::None => {
+                output.copy_from_slice(&compressed);
+                Ok(())
+            }
         }
+    }
+
+    fn decompress_block<T: Read + Seek>(
+        &mut self,
+        reader: &mut T,
+        block: &StorageBlock,
+        index: usize,
+    ) -> Result<Vec<u8>, Error> {
+        let mut uncompressed = vec![0; block.uncompressed_size as usize];
+        self.decompress_block_into(reader, block, index, &mut uncompressed)?;
+        Ok(uncompressed)
     }
 }
 

@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
-pub static COMMON_STRINGS: LazyLock<BTreeMap<u32, &'static str>> = LazyLock::new(|| [
+pub static COMMON_STRINGS: LazyLock<BTreeMap<u32, &'static str>> = LazyLock::new(||
+    [
         (0, "AABB"),
         (5, "AnimationClip"),
         (19, "AnimationCurve"),

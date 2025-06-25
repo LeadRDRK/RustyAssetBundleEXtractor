@@ -1,0 +1,10 @@
+[package]
+name = "example-dump-bundle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+runirip = { path = "../.." }
+serde_json = "1.0"
+serde_yaml = "0.9.34"
+rmp-serde = "1.3"

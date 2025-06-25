@@ -1,3 +1,5 @@
+use std::io::SeekFrom;
+
 use super::UnityFile;
 use crate::{
     config::ExtractionConfig,
@@ -14,7 +16,7 @@ pub struct SerializedFileHeader {
     m_FileSize: i64,
     m_Version: u32,
     m_DataOffset: i64,
-    m_Endianess: u8,
+    m_Endianness: u8,
     m_Reserved: [u8; 3],
     unknown: i64,
 }
@@ -28,28 +30,25 @@ impl SerializedFileHeader {
             m_FileSize: reader.read_u32::<B>()? as i64,
             m_Version: reader.read_u32::<B>()?,
             m_DataOffset: reader.read_u32::<B>()? as i64,
-            m_Endianess: 0,
+            m_Endianness: 0,
             m_Reserved: [0, 0, 0],
             unknown: 0,
         };
 
         if header.m_Version >= 9 {
-            header.m_Endianess = reader.read_u8()?;
+            header.m_Endianness = reader.read_u8()?;
             header.m_Reserved = reader.read_bytes_sized(3)?.as_slice().try_into()?;
         } else {
-            reader.seek(std::io::SeekFrom::Current(
-                header.m_FileSize - header.m_MetadataSize as i64,
+            reader.seek(SeekFrom::Start(
+                (header.m_FileSize as u64)
+                    .checked_sub(header.m_MetadataSize as u64)
+                    .ok_or_else(|| Error::InvalidValue("Invalid sizes in serialized file header".to_owned()))?
             ))?;
-            header.m_Endianess = reader.read_u8()?;
+            header.m_Endianness = reader.read_u8()?;
         }
 
-        if header.m_Version >= 22 {
-            match header.m_Endianess {
-                0 => header.read_large_file_header::<T, LittleEndian>(reader, config)?,
-                1 => header.read_large_file_header::<T, BigEndian>(reader, config)?,
-                _ => return Err(Error::InvalidEndianness),
-            };
-        };
+        header.read_large_file_header::<T, BigEndian>(reader, config)?;
+
         Ok(header)
     }
 
@@ -324,7 +323,7 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectReader<'a, R> {
 
     pub fn get_raw_data(&mut self) -> Result<Vec<u8>, Error> {
         self.reader
-            .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
+            .seek(SeekFrom::Start(self.info.m_Offset as u64))?;
         self.reader.read_bytes_sized(self.info.m_Size as usize)
     }
 
@@ -334,26 +333,14 @@ impl<'a, R: std::io::Read + std::io::Seek> ObjectReader<'a, R> {
             .flatten()
     }
 
-    pub fn peek_name(&mut self) -> Result<String, Error> {
-        self.reader
-            .seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
-
-        // todo - check against typeid
-        match self.file.m_Header.m_Endianess {
-            0 => self.reader.read_string::<LittleEndian>(),
-            1 => self.reader.read_string::<BigEndian>(),
-            _ => Err(Error::InvalidEndianness),
-        }
-    }
-
     pub fn read(&mut self) -> Result<TypeTreeValue, Error>{
         let node = self.typ
             .map(|t| t.m_Type.as_ref())
             .flatten()
             .ok_or(Error::TypeTreeNotFound)?;
 
-        self.reader.seek(std::io::SeekFrom::Start(self.info.m_Offset as u64))?;
-        match self.file.m_Header.m_Endianess {
+        self.reader.seek(SeekFrom::Start(self.info.m_Offset as u64))?;
+        match self.file.m_Header.m_Endianness {
             0 => node.read::<R, LittleEndian>(self.reader),
             1 => node.read::<R, BigEndian>(self.reader),
             _ => Err(Error::InvalidEndianness),
@@ -382,7 +369,7 @@ impl SerializedFile {
     ) -> Result<SerializedFile, Error> {
         let header = SerializedFileHeader::from_reader::<T, BigEndian>(reader, config)?;
 
-        match header.m_Endianess {
+        match header.m_Endianness {
             0 => SerializedFile::from_reader_endianed::<T, LittleEndian>(reader, header, config),
             1 => SerializedFile::from_reader_endianed::<T, BigEndian>(reader, header, config),
             _ => Err(Error::InvalidEndianness),

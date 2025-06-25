@@ -2,7 +2,7 @@ pub use runirip_objects::*;
 
 use crate::files::{ObjectReader, SerializedFile};
 
-trait PPtrExt {
+pub trait PPtrExt {
     fn get_object_reader<'a, R: std::io::Read + std::io::Seek>(
         &'a self,
         asset: &'a SerializedFile,

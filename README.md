@@ -12,118 +12,19 @@
 [license_apache]: https://raw.githubusercontent.com/LeadRDRK/runirip/main/LICENSE-APACHE
 
 
-runirip is a Rust library for manipulating various Unity asset file formats. It is a fork of [rabex](https://github.com/UniversalGameExtraction/RustyAssetBundleEXtractor).
+runirip is a Rust library that allows you to manipulate various Unity asset file formats. It is a fork of [rabex](https://github.com/UniversalGameExtraction/RustyAssetBundleEXtractor) that aims to be usable in production.
 
 ## Feature flags
+
 All of these features are enabled by default.
-- Compression: `lzma`, `lz4`, `brotli`
-- Encryption: `unitycn_encryption`
+- `unitycn_encryption`: Enables support for decrypting encrypted UnityCN assets.
+- `objects`: Enables the [`objects`](https://crates.io/crates/runirip-objects) crate which contains struct definitions for Unity classes to be parsed as. Depends on `serde`.
+- `serde`: Enables `serde` serialization/deserialization support.
+- `lzma`, `lz4`, `brotli`: Enables support for the corresponding compression method.
 
 ## Examples
 
-### Parsing an asset bundle and dumping its objects
-
-```rust
-use std::{
-    fs::{DirBuilder, File},
-    io::{Seek, Write, BufWriter},
-    path::Path,
-};
-
-use runirip::files::{BundleFile, SerializedFile};
-use runirip::config::ExtractionConfig;
-
-let mut reader = File::open(fp).unwrap();
-let export_dir = Path::new("dump");
-
-// parse the bundle file
-let config = ExtractionConfig::new();
-let mut bundle = BundleFile::from_reader(&mut reader, &config).unwrap();
-
-// iterate over the files in the bundle
-for directory in &bundle.m_DirectoryInfo {
-    // generate export dir for cab
-    let export_cab_dir = export_dir.join(&directory.path);
-    // seek to the start of the file in the bundle
-    bundle
-        .m_BlockReader
-        .seek(std::io::SeekFrom::Start(directory.offset as u64))
-        .unwrap();
-
-    // try to parse the file as a SerializedFile
-    match SerializedFile::from_reader(&mut bundle.m_BlockReader, &config) {
-        Ok(serialized) => {
-            // iterate over objects
-            for object_info in &serialized.m_Objects {
-                // get a helper object to parse the object
-                let mut reader =
-                    serialized.get_object_reader(object_info, &mut bundle.m_BlockReader);
-
-                // try to get the name
-                let name = match reader.peek_name() {
-                    Ok(name) => format!("{}_{}", object_info.m_PathID, name),
-                    Err(_) => format!("{}", object_info.m_PathID),
-                };
-
-                // ensure that the parent directory exists
-                let dst_path = export_cab_dir.join(name);
-                DirBuilder::new()
-                    .recursive(true)
-                    .create(dst_path.parent().unwrap())
-                    .unwrap_or_else(|_| panic!("Failed to create {:?}", dst_path.parent()));
-
-                // read the object
-                let object = reader.read().unwrap();
-
-                // export as json
-                let json_file = File::create(format!("{}.json", dst_path.to_string_lossy())).unwrap();
-                serde_json::to_writer_pretty(&mut BufWriter::new(json_file), &object).unwrap();
-
-                // export as yaml
-                let yaml_file = File::create(format!("{}.yaml", dst_path.to_string_lossy())).unwrap();
-                serde_yaml::to_writer(&mut BufWriter::new(yaml_file), &object).unwrap();
-
-                // parse the object as msgpack
-                let msgpack = rmp_serde::to_vec(&object).unwrap();
-                File::create(format!("{}.msgpack", dst_path.to_string_lossy()))
-                    .unwrap()
-                    .write_all(&msgpack)
-                    .unwrap();
-
-                // serialize as actual class
-                // note: a small part of the object classes isn't implemented yet
-                // TODO: cant actually do this now
-                if object.m_ClassID == runirip::objects::map::AssetBundle {
-                    let ab = reader
-                        .parse::<runirip::objects::classes::AssetBundle>()
-                        .unwrap();
-                    println!("{:?}", ab);
-                }
-            }
-        }
-        Err(e) => {
-            // TODO - try to filter out resource files
-            println!(
-                "Failed to parse {} as SerializedFile.",
-                &directory.path.to_string()
-            );
-        }
-    }
-}
-```
-
-### Reading a UnityCN encrypted asset bundle
-
-```rust"
-use runirip::files::BundleFile;
-
-let mut reader = File::open(fp).unwrap();
-let config = ExtractionConfig {
-    unitycn_key: Some("Decryption Key".as_bytes().try_into().unwrap()),
-    fallback_unity_version: "2020.3.0f1".to_owned(),
-};
-let bundle = BundleFile::from_reader(&mut reader, &config).unwrap();
-```
+See [`/examples`](/examples).
 
 ## Notes
 
@@ -152,9 +53,6 @@ let bundle = BundleFile::from_reader(&mut reader, &config).unwrap();
   - [x] Feature config
 
 ## License
+runirip is dual-licensed under Apache 2.0 and MIT. You can choose between one of them if you use this library.
 
-runirip is primarily distributed under the terms of both the MIT license and the
-Apache License (Version 2.0).
-
-See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT), and
-[COPYRIGHT](COPYRIGHT) for details.
+See [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for more details.

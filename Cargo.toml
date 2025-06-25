@@ -37,11 +37,13 @@ brotli = ["dep:brotli"]
 lz4 = ["dep:lz4_flex"]
 
 unitycn_encryption = ["dep:aes", "dep:cbc"]
-objects = ["dep:runirip-objects", "dep:serde"]
+objects = ["dep:runirip-objects", "serde"]
 serde = ["dep:serde"]
+
 
 [workspace]
 resolver = "2"
 members = [
-    "runirip-objects"
+    "runirip-objects",
+    "examples/*"
 ]

@@ -370,7 +370,8 @@ pub const VisualEffect: i32 = 2083052967;
 pub const LocalizationAsset: i32 = 2083778819;
 pub const ScriptedImporter: i32 = 2089858483;
 
-pub static CLASS_ID_NAME: LazyLock<BTreeMap<i32, &'static str>> = LazyLock::new(|| [
+static NAMES_MAP: LazyLock<BTreeMap<i32, &'static str>> = LazyLock::new(||
+    [
         (UnknownType, "UnknownType"),
         (Object, "Object"),
         (GameObject, "GameObject"),
@@ -780,3 +781,7 @@ pub static CLASS_ID_NAME: LazyLock<BTreeMap<i32, &'static str>> = LazyLock::new(
     .copied()
     .collect()
 );
+
+pub fn class_id_to_name(id: i32) -> Option<&'static str> {
+    NAMES_MAP.get(&id).map(|v| *v)
+}

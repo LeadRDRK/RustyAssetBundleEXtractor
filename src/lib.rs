@@ -7,7 +7,6 @@ pub mod files;
 pub mod read_ext;
 
 mod unitycn;
-// mod test;
 
 mod error;
 pub use error::Error;
@@ -21,3 +20,6 @@ pub type TypeTreeValue = type_tree::Value;
 
 #[cfg(feature = "objects")]
 pub mod objects;
+
+#[cfg(feature = "objects")]
+pub use objects::classes::ids as class_ids;

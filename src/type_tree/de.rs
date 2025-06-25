@@ -1,4 +1,6 @@
-use crate::TypeTreeValue;
+use crate::{Error, TypeTreeValue};
+
+use serde::{de::{value::{MapDeserializer, SeqDeserializer}, IntoDeserializer}, forward_to_deserialize_any};
 
 #[derive(Debug)]
 pub struct Deserializer<'de>(&'de TypeTreeValue);
@@ -9,12 +11,8 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-#[cfg(feature = "serde")]
-use serde::{de::value::{MapDeserializer, SeqDeserializer}, forward_to_deserialize_any};
-
-#[cfg(feature = "serde")]
 impl<'de> serde::de::Deserializer<'de> for Deserializer<'de> {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -35,13 +33,13 @@ impl<'de> serde::de::Deserializer<'de> for Deserializer<'de> {
             TypeTreeValue::Bool(v) => visitor.visit_bool(*v),
             TypeTreeValue::String(v) => visitor.visit_borrowed_str(v),
             TypeTreeValue::TypelessData(v) => visitor.visit_bytes(v),
-            TypeTreeValue::Map(v) => visitor.visit_map(MapDeserializer::new(
-                v.iter().map(|&(ref k, ref v)| (k, v)))
-            ),
+            TypeTreeValue::Map(v) => visitor.visit_seq(SeqDeserializer::new(
+                v.iter().map(|&(ref key, ref value)| PairDeserializer([key, value]))
+            )),
             TypeTreeValue::Array(v) => visitor.visit_seq(SeqDeserializer::new(v.iter())),
             TypeTreeValue::Class(v) => visitor.visit_map(MapDeserializer::new(
-                v.iter().map(|(name, value)| (name.as_str(), value)))
-            )
+                v.iter().map(|(name, value)| (name.as_str(), value))
+            ))
         }
     }
 
@@ -56,6 +54,34 @@ impl<'de> serde::de::Deserializer<'de> for Deserializer<'de> {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf unit unit_struct seq tuple tuple_struct map
         struct newtype_struct enum identifier ignored_any
+    }
+}
+
+#[derive(Debug)]
+pub struct PairDeserializer<'de>([&'de TypeTreeValue; 2]);
+
+impl<'de> serde::de::Deserializer<'de> for PairDeserializer<'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>
+    {
+        visitor.visit_seq(SeqDeserializer::new(self.0.into_iter()))
+    }
+
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any
+    }
+}
+
+impl<'de> IntoDeserializer<'de, Error> for PairDeserializer<'de> {
+    type Deserializer = PairDeserializer<'de>;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
     }
 }
 
@@ -239,5 +265,27 @@ mod tests {
         assert_eq!(clip.m_HasGenericRootTransform, Some(true));
         assert_eq!(clip.m_HasMotionFloatCurves, Some(false));
         assert_eq!(clip.m_Legacy, Some(true));
+    }
+
+    #[test]
+    fn human_template_deserialization() {
+        let value = class_value(vec![
+            ("m_Name", Value::String("HumanModel".to_string())),
+            ("m_BoneTemplate", Value::Map(vec![
+                (Value::String("a".to_string()), Value::String("b".to_string())),
+                (Value::String("c".to_string()), Value::String("d".to_string())),
+            ])),
+        ]);
+
+        let deserializer = Deserializer::new(&value);
+        let human_template = HumanTemplate::deserialize(deserializer).unwrap();
+        assert_eq!(human_template.m_Name, "HumanModel");
+        assert_eq!(
+            human_template.m_BoneTemplate,
+            vec![
+                ("a".to_string(), "b".to_string()),
+                ("c".to_string(), "d".to_string())
+            ]
+        );
     }
 }
