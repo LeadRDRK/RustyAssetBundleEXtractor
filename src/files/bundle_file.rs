@@ -7,7 +7,7 @@ use crate::{
 use bitflags::bitflags;
 use byteorder::{BigEndian, ReadBytesExt};
 use num_enum::TryFromPrimitive;
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 bitflags! {
     struct ArchiveFlags: u32 {
@@ -211,15 +211,12 @@ impl BundleFile {
         reader: &mut T,
         config: &ExtractionConfig,
     ) -> Result<(Vec<FileEntry>, Cursor<Vec<u8>>), Error> {
-        let use_new_archive_flags = !{
-            let version = self.m_Header.get_revision_tuple(config)?;
-            (version < (2020, 0, 0))
-                | ((version.0 == 2020) & (version < (2020, 3, 34)))
-                | ((version.0 == 2021) & (version < (2021, 3, 2)))
-                | ((version.0 == 2022) & (version < (2022, 1, 1)))
-        };
-
         //ReadHeader
+        let unity_ver = self.m_Header.get_revision_tuple(config)?;
+        let use_new_archive_flags = !(unity_ver < (2020, 0, 0))
+            | ((unity_ver.0 == 2020) & (unity_ver < (2020, 3, 34)))
+            | ((unity_ver.0 == 2021) & (unity_ver < (2021, 3, 2)))
+            | ((unity_ver.0 == 2022) & (unity_ver < (2022, 1, 1)));
         self.m_Header.size = reader.read_i64::<BigEndian>()? as u32;
 
         let block_info = StorageBlock {
@@ -233,9 +230,18 @@ impl BundleFile {
         }
 
         //ReadBlocksInfoAndDirectory
-        // TODO - check for 2019.4, which is version 6
         if self.m_Header.version >= 7 {
             reader.align(16)?;
+        }
+        else if unity_ver.0 >= 2019 && unity_ver.1 >= 4 {
+            //check if we need to align the reader
+            //- align to 16 bytes and check if all are 0
+            //- if not, reset the reader to the previous position
+            let pre_align = reader.stream_position()?;
+            let align_data = reader.read_bytes_sized((16 - (pre_align as usize % 16)) % 16)?;
+            if align_data.iter().any(|x| *x != 0) {
+                reader.seek(SeekFrom::Start(pre_align))?;
+            }
         }
 
         let blocks_info_bytes: Vec<u8>;
