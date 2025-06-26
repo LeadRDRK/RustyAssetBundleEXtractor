@@ -370,7 +370,6 @@ impl SerializedFile {
         config: &crate::config::ExtractionConfig,
     ) -> Result<SerializedFile, Error> {
         let header = SerializedFileHeader::from_reader::<T, BigEndian>(reader, config)?;
-        println!("header");
 
         match header.m_Endianness {
             0 => SerializedFile::from_reader_endianed::<T, LittleEndian>(reader, header, config),
