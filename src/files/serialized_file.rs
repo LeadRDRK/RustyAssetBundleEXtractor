@@ -35,9 +35,13 @@ impl SerializedFileHeader {
             unknown: 0,
         };
 
-        if header.m_Version >= 9 {
+        if header.m_Version >= SerializedFileFormatVersion::UNKNOWN_9.bits() {
             header.m_Endianness = reader.read_u8()?;
             header.m_Reserved = reader.read_bytes_sized(3)?.as_slice().try_into()?;
+
+            if header.m_Version >= SerializedFileFormatVersion::LARGE_FILES_SUPPORT.bits() {
+                header.read_large_file_header::<T, BigEndian>(reader, config)?;
+            }
         } else {
             reader.seek(SeekFrom::Start(
                 (header.m_FileSize as u64)
@@ -46,8 +50,6 @@ impl SerializedFileHeader {
             ))?;
             header.m_Endianness = reader.read_u8()?;
         }
-
-        header.read_large_file_header::<T, BigEndian>(reader, config)?;
 
         Ok(header)
     }
@@ -368,6 +370,7 @@ impl SerializedFile {
         config: &crate::config::ExtractionConfig,
     ) -> Result<SerializedFile, Error> {
         let header = SerializedFileHeader::from_reader::<T, BigEndian>(reader, config)?;
+        println!("header");
 
         match header.m_Endianness {
             0 => SerializedFile::from_reader_endianed::<T, LittleEndian>(reader, header, config),
@@ -387,22 +390,17 @@ impl SerializedFile {
     {
         // Read Metadata
         let mut m_UnityVersion = None;
-        if header.m_Version >= 9 {
+        if header.m_Version >= SerializedFileFormatVersion::UNKNOWN_7.bits() {
             m_UnityVersion = Some(reader.read_cstr()?);
-            // SetVersion(unity_version);
         }
 
         let mut m_TargetPlatform = None;
-        if header.m_Version >= 10 {
+        if header.m_Version >= SerializedFileFormatVersion::UNKNOWN_8.bits() {
             m_TargetPlatform = Some(reader.read_i32::<B>()?);
-            // if !Enum.IsDefined(typeof(BuildTarget, m_TargetPlatform))
-            // {
-            //     m_TargetPlatform = BuildTarget.UnknownPlatform;
-            // }
         }
 
         let mut m_EnabledTypeTree = false;
-        if header.m_Version >= 11 {
+        if header.m_Version >= SerializedFileFormatVersion::HAS_TYPE_TREE_HASHES.bits() {
             m_EnabledTypeTree = reader.read_bool()?;
         }
 
